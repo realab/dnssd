@@ -159,6 +159,23 @@ func (c *mdnsConn) Close() {
 	c.close()
 }
 
+func newMDNSConn2() (*mdnsConn, error) {
+	conn4, err := net.ListenMulticastUDP("udp4", nil, &net.UDPAddr{IP: IPv4LinkLocalMulticast, Port: 5353})
+	if err != nil {
+		return nil, err
+	}
+	conn6, err := net.ListenMulticastUDP("udp6", nil, &net.UDPAddr{IP: IPv6LinkLocalMulticast, Port: 5353})
+	if err != nil {
+		return nil, err
+	}
+
+	return &mdnsConn{
+		ipv4: ipv4.NewPacketConn(conn4),
+		ipv6: ipv6.NewPacketConn(conn6),
+		ch:   make(chan *Request),
+	}, nil
+}
+
 func newMDNSConn(ifs ...string) (*mdnsConn, error) {
 	var errs []error
 	var connIPv4 *ipv4.PacketConn

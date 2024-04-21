@@ -2,6 +2,7 @@ package dnssd
 
 import (
 	"github.com/brutella/dnssd/log"
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/miekg/dns"
 
 	"context"
@@ -35,7 +36,17 @@ func LookupType(ctx context.Context, service string, add AddFunc, rmv RmvFunc) (
 	}
 	defer conn.close()
 
-	return lookupType(ctx, service, conn, add, rmv)
+	return lookupTypes(ctx, []string{service}, conn, add, rmv)
+}
+
+func LookupTypes(ctx context.Context, services []string, add AddFunc, rmv RmvFunc) (err error) {
+	conn, err := newMDNSConn()
+	if err != nil {
+		return err
+	}
+	defer conn.close()
+
+	return lookupTypes(ctx, services, conn, add, rmv)
 }
 
 // ServiceInstanceName returns the service instance name
@@ -56,16 +67,17 @@ func (e BrowseEntry) UnescapedName() string {
 	return unquote.Replace(e.Name)
 }
 
-func lookupType(ctx context.Context, service string, conn MDNSConn, add AddFunc, rmv RmvFunc) (err error) {
+func lookupTypes(ctx context.Context, services []string, conn MDNSConn, add AddFunc, rmv RmvFunc) (err error) {
 	var cache = NewCache()
 
 	m := new(dns.Msg)
-	m.Question = []dns.Question{
-		dns.Question{
-			Name:   service,
+	m.Question = []dns.Question{}
+	for _, s := range services {
+		m.Question = append(m.Question, dns.Question{
+			Name:   s,
 			Qtype:  dns.TypePTR,
 			Qclass: dns.ClassINET,
-		},
+		})
 	}
 	// TODO include known answers which current ttl is more than half of the correct ttl (see TFC6772 7.1: Known-Answer Supression)
 	// m.Answer = ...
@@ -85,6 +97,7 @@ func lookupType(ctx context.Context, service string, conn MDNSConn, add AddFunc,
 		}
 	}()
 
+	serviceSet := mapset.NewSet[string](services...)
 	es := []*BrowseEntry{}
 	for {
 		select {
@@ -98,14 +111,14 @@ func lookupType(ctx context.Context, service string, conn MDNSConn, add AddFunc,
 			log.Debug.Printf("Receive message at %s\n%s\n", req.IfaceName(), req.msg)
 			cache.UpdateFrom(req.msg, req.iface)
 			for _, srv := range cache.Services() {
-				if srv.ServiceName() != service {
+				if !serviceSet.ContainsOne(srv.ServiceName()) {
 					continue
 				}
 
 				for ifaceName, ips := range srv.ifaceIPs {
 					var found = false
 					for _, e := range es {
-						if e.Name == srv.Name && e.IfaceName == ifaceName {
+						if e.Type == srv.Type && e.Name == srv.Name && e.IfaceName == ifaceName {
 							found = true
 							break
 						}
