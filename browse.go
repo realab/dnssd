@@ -1,6 +1,8 @@
 package dnssd
 
 import (
+	"time"
+
 	"github.com/brutella/dnssd/log"
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/miekg/dns"
@@ -20,6 +22,7 @@ type BrowseEntry struct {
 	Type      string
 	Domain    string
 	Text      map[string]string
+	TTL       time.Duration
 }
 
 // AddFunc is called when a service instance was found.
@@ -133,6 +136,7 @@ func lookupTypes(ctx context.Context, services []string, conn MDNSConn, add AddF
 							Type:      srv.Type,
 							Domain:    srv.Domain,
 							Text:      srv.Text,
+							TTL:       srv.TTL,
 						}
 						es = append(es, &e)
 						add(e)
